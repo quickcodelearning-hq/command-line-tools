@@ -1,5 +1,8 @@
 #!/bin/zsh
-# Update this guide whenever a custom command is added or changed.
+# Usage: mycommands [folder-prefix]; -h/--help/help show the complete guide.
+# Keep the existing guide formatting. New *-tool(s) folders can supply their
+# commands in README.md under "## Commands", without changes to this script.
+show_guide() {
 cat <<'HELP'
 YOUR CUSTOM COMMANDS
 
@@ -63,3 +66,57 @@ TOOLS LOCATION
 
 To add a command to this guide, edit mycommands in that folder.
 HELP
+}
+
+if (( $# > 1 )); then
+  print -u2 -r -- 'Usage: mycommands [folder-prefix]'
+  exit 1
+fi
+prefix="${(L)1}"
+case "$prefix" in
+  -h|--help|help) prefix='' ;;
+esac
+# :A resolves the installed symlink; discovery never depends on the caller's cwd.
+root="${0:A:h}"
+guide="$(show_guide)"
+[[ -n "$prefix" ]] || print -r -- "$guide"
+matched=0
+for folder in "$root"/*(N/); do
+  name="${folder:t}"
+  lower="${(L)name}"
+  [[ "$lower" == *-tool || "$lower" == *-tools ]] || continue
+  [[ "$lower" == "$prefix"* ]] || continue
+  (( matched += 1 ))
+  stem="${lower%-tools}"
+  stem="${stem%-tool}"
+  # Existing entries are blank-line-separated blocks whose command uses the
+  # utility stem (e.g. stem, stem subcommand, or stem-suffix). No descriptions
+  # are duplicated, and nothing in a utility folder is executed or sourced.
+  entries="$(print -r -- "$guide" | awk -v stem="$stem" '
+    BEGIN { RS=""; ORS="\n\n" }
+    /^  [^ ]/ {
+      command=tolower($1)
+      if (command == stem || index(command, stem "-") == 1) print
+    }
+  ')"
+  if [[ -z "$entries" && -r "$folder/README.md" ]]; then
+    entries="$(awk '
+      /^## Commands[[:space:]]*$/ { inside=1; next }
+      /^## / { if (inside) exit }
+      inside { print }
+    ' "$folder/README.md")"
+  elif [[ -z "$prefix" ]]; then
+    # These commands were already printed in the original complete guide.
+    continue
+  fi
+  print
+  print -r -- "$name"
+  if [[ -n "$entries" ]]; then
+    print -r -- "$entries"
+  else
+    print -r -- '  No commands documented yet (add a ## Commands section to README.md).'
+  fi
+done
+if (( matched == 0 )) && [[ -n "$prefix" ]]; then
+  print -r -- "No utility folders start with '$1'. Try mycommands to see all commands."
+fi
