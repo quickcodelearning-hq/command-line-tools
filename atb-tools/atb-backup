@@ -1,0 +1,73 @@
+#!/bin/zsh
+
+set -euo pipefail
+
+readonly SOURCE="/Users/kennethlowrey/Documents/At The Books/Completed"
+readonly DRIVE_A="/Volumes/ATB-01A-500GB"
+readonly DRIVE_B="/Volumes/ATB-01B-500GB"
+readonly BACKUP_SUBPATH="At The Books/Completed"
+
+fail() {
+    echo
+    echo "BACKUP FAILED: $1" >&2
+    echo "No success message was issued. Do not delete the local files." >&2
+    exit 1
+}
+
+is_mounted_volume() {
+    local volume="$1"
+    [[ -d "$volume" ]] || return 1
+    [[ "$(stat -f '%d' "$volume")" != "$(stat -f '%d' /)" ]]
+}
+
+verify_copy() {
+    local destination="$1"
+    local differences
+
+    # Verify the directory tree, file names, and file sizes. Do not compare
+    # volatile macOS extended attributes such as quarantine and provenance.
+    differences="$(rsync \
+        -rln \
+        --size-only \
+        --itemize-changes \
+        --out-format='%i %n%L' \
+        "$SOURCE/" \
+        "$destination/"
+    )"
+
+    [[ -z "$differences" ]] || {
+        echo "$differences" >&2
+        return 1
+    }
+}
+
+[[ -d "$SOURCE" ]] || fail "Source folder not found: $SOURCE"
+
+is_mounted_volume "$DRIVE_A" || fail "Required drive not found or not mounted: ATB-01A-500GB"
+is_mounted_volume "$DRIVE_B" || fail "Required drive not found or not mounted: ATB-01B-500GB"
+
+for drive in "$DRIVE_A" "$DRIVE_B"; do
+    destination="$drive/$BACKUP_SUBPATH"
+
+    echo
+    echo "Copying Completed to ${drive:t}..."
+    mkdir -p "$destination"
+
+    rsync \
+        -aE \
+        --human-readable \
+        --progress \
+        "$SOURCE/" \
+        "$destination/" || fail "Copy to ${drive:t} did not complete."
+
+    echo "Verifying file names and sizes on ${drive:t}..."
+    verify_copy "$destination" || fail "Verification failed on ${drive:t}."
+done
+
+echo
+echo "BACKUP SUCCESSFUL"
+echo "Every file in Completed was copied and its file name and size were verified on both drives:"
+echo "  ATB-01A-500GB/$BACKUP_SUBPATH"
+echo "  ATB-01B-500GB/$BACKUP_SUBPATH"
+echo
+echo "The local files may now be deleted when you are ready."
