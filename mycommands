@@ -1,0 +1,65 @@
+#!/bin/zsh
+# Update this guide whenever a custom command is added or changed.
+cat <<'HELP'
+YOUR CUSTOM COMMANDS
+
+  atb
+    Go to ~/Documents/At The Books.
+
+  atb 34
+    Go to chapter 34; enter its Export folder if present.
+
+  atb-review
+    Create a smaller review MP4 from the single video in this folder.
+    Automatically finds lowercase .m4v, .mov, and .mp4 files.
+
+  atb-review "filename.mp4"
+    Create a review copy of a specific video. Use this for uppercase
+    extensions too, such as "filename.MP4". Keeps the original video.
+
+  atb-backup
+    Copy completed episodes to BOTH external drives:
+      ATB-01A-500GB and ATB-01B-500GB
+    Both drives must be mounted. Verifies file names and sizes,
+    not content checksums. Does not delete local files.
+
+  lshed help
+    Show all Lead Shredder commands and options.
+
+  lshed run --limit 10
+    Find and export fresh leads. Calls Google and checks websites for emails.
+
+  lshed dry-run --limit 5
+    Preview fresh leads without writing CSV or history.
+    Still calls Google; skips email lookup.
+
+  lshed enrich --limit 100
+    Look up emails for existing leads and update their SQLite/CSV records.
+    Makes website requests.
+
+  lshed retry-emails --limit 100
+    Retry eligible missing emails. Respects cooldowns and attempt caps.
+    Makes website requests and updates SQLite/CSV records.
+
+  lshed history
+    Show exported lead and unique practice totals (read-only).
+
+  lshed test
+    Run the application's mocked tests with temporary data.
+    No live API calls or real lead enrichment.
+
+  lshed status
+    Show application paths, CSV count, and history totals (read-only).
+
+  lshed doctor
+    Check the existing virtual environment, files, and API-key presence.
+    No network requests; never prints your key.
+
+  mycommands
+    Show this guide. This guide does not run any listed commands.
+
+TOOLS LOCATION
+  ~/Documents/code/command-line-tools
+
+To add a command to this guide, edit mycommands in that folder.
+HELP

@@ -1,0 +1,90 @@
+#!/bin/zsh
+set -euo pipefail
+
+fail() { print -u2 -r -- "lshed: $*"; exit 1; }
+usage() {
+    cat <<'HELP'
+Usage: lshed COMMAND [options]
+  help          Show this help
+  run           Export fresh leads (default limit 25; Google + email requests)
+  dry-run       Preview export (Google requests; no CSV/history writes)
+  enrich        Enrich historical leads (default limit 100; website requests)
+  retry-emails  Enrich with --retry-checked (cooldown/attempt caps still apply)
+  history       Read export totals without modifying the database
+  test          Run the application's mocked unittest suite
+  status        Show local paths, history totals, and CSV count (read-only)
+  doctor        Check local Python, dependency, files, and key presence
+
+Examples:
+  lshed run --limit 10 --city "Fort Lauderdale, FL"
+  lshed dry-run --limit 5
+  lshed enrich --limit 100
+  lshed retry-emails --limit 100
+
+run/dry-run/enrich/retry-emails accept the application's options, including --help.
+Relative --db/--export-dir paths are relative to the application directory.
+LSHED_APP_DIR overrides ~/Documents/code/lead-shedder; its .venv is always used.
+No API keys are stored or printed. doctor never makes network requests.
+HELP
+}
+command="${1:-help}"
+(( $# == 0 )) || shift
+case "$command" in
+    help|-h|--help) (( $# == 0 )) || fail 'help takes no arguments'; usage; exit 0 ;;
+    run|dry-run|enrich|retry-emails) ;;
+    history|test|status|doctor) (( $# == 0 )) || fail "$command takes no arguments" ;;
+    *) fail "Unknown command: $command. Run lshed help." ;;
+esac
+app="${LSHED_APP_DIR:-$HOME/Documents/code/lead-shedder}"
+[[ -d "$app" ]] || fail "Application directory missing: $app"
+cd -- "$app"
+app="$PWD"
+python="$app/.venv/bin/python"
+[[ -x "$python" ]] || fail "Existing virtualenv Python missing: $python"
+[[ -f lead_shredder.py ]] || fail "Missing $app/lead_shredder.py"
+export PYTHONDONTWRITEBYTECODE=1
+case "$command" in
+    run) exec "$python" lead_shredder.py export "$@" ;;
+    dry-run) exec "$python" lead_shredder.py export --dry-run "$@" ;;
+    enrich) exec "$python" lead_shredder.py enrich-emails "$@" ;;
+    retry-emails) exec "$python" lead_shredder.py enrich-emails --retry-checked "$@" ;;
+    test)
+        [[ -f tests/test_email_enrichment.py ]] || fail 'Application tests missing'
+        exec "$python" -m unittest discover -s tests -v ;;
+    doctor)
+        "$python" -c 'import sys, requests, sqlite3; assert sys.prefix != sys.base_prefix, "Python is not in a virtual environment"; print("Virtualenv Python:", sys.version.split()[0]); print("requests:", requests.__version__)'
+        [[ -f email_enrichment.py ]] || fail 'email_enrichment.py missing'
+        [[ -f tests/test_email_enrichment.py ]] || fail 'Application tests missing'
+        print -r -- "Application: $app"
+        if [[ -n "${GOOGLE_API_KEY:-}" ]]; then
+            print 'GOOGLE_API_KEY: set (validity not checked)'
+        else
+            print 'GOOGLE_API_KEY: unset (needed for run and dry-run only)'
+        fi
+        print 'Local checks passed. No network requests made.' ;;
+    history|status)
+        exec "$python" - "$command" <<'PY'
+from pathlib import Path
+import sqlite3
+import sys
+root = Path.cwd()
+db = root / 'lead_shredder.sqlite3'
+if sys.argv[1] == 'status':
+    print(f'Application: {root}')
+    print(f'Python: {sys.executable}')
+    print(f'History: {db}')
+    print(f'CSV files in exports: {sum(1 for p in (root / "exports").glob("*.csv") if p.is_file())}')
+if not db.exists():
+    print('No export history database yet.')
+    raise SystemExit(0)
+try:
+    with sqlite3.connect(db.as_uri() + '?mode=ro', uri=True) as conn:
+        total, unique = conn.execute('SELECT COUNT(*), COUNT(DISTINCT dedupe_key) FROM exported_leads').fetchone()
+    print(f'Total leads already exported: {total}')
+    print(f'Unique practices stored: {unique}')
+except sqlite3.Error as exc:
+    print(f'lshed: Cannot read history: {exc}', file=sys.stderr)
+    raise SystemExit(1)
+PY
+        ;;
+esac
